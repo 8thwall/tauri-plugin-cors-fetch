@@ -106,6 +106,19 @@ class CORSFetch {
         ? init.headers
         : Object.entries(init.headers);
 
+      // Some APIs check the referer explicitly like:
+      // https://github.com/8thwall/code8/blob/5c09559cddac355d7587b646ecdafc415bdc8012/reality/cloud/xrhome/src/server/controllers/public-controller.ts#L151
+      // As a safeguard, we force the scheme to be https
+      if (window.location.href) {
+        const referer = window.location.href.replace(/^[a-zA-Z+.-]+:\/\//, 'https://');
+        headers.push(['Referer', referer]);
+      }
+
+      if (window.location.origin) {
+        const origin = window.location.origin.replace(/^[a-zA-Z+.-]+:\/\//, 'https://');
+        headers.push(['Origin', origin]);
+      }
+
       const mappedHeaders = headers.map(([name, val]) => [
         name,
         // we need to ensure we have all values as strings
