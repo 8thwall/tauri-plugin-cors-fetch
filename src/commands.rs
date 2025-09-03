@@ -26,6 +26,31 @@ pub struct RequestConfig {
     proxy: Option<Proxy>,
 }
 
+#[cfg(test)]
+impl RequestConfig {
+    pub(crate) fn new(
+        request_id: u64,
+        method: String,
+        url: url::Url,
+        headers: Vec<(String, String)>,
+        data: Option<Vec<u8>>,
+        connect_timeout: Option<u64>,
+        max_redirections: Option<usize>,
+        proxy: Option<Proxy>,
+    ) -> Self {
+        Self {
+            request_id,
+            method,
+            url,
+            headers,
+            data,
+            connect_timeout,
+            max_redirections,
+            proxy,
+        }
+    }
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FetchResponse {
@@ -34,6 +59,13 @@ pub struct FetchResponse {
     headers: Vec<(String, String)>,
     url: String,
     body: Option<Vec<u8>>,
+}
+
+#[cfg(test)]
+impl FetchResponse {
+    pub(crate) fn body(&self) -> &Option<Vec<u8>> {
+        &self.body
+    }
 }
 
 use once_cell::sync::Lazy;
@@ -141,18 +173,54 @@ pub async fn get_response(
                 let status = res.status();
                 let url = res.url().to_string();
                 let mut headers = Vec::new();
+                let mut content_encoding = None;
                 for (key, val) in res.headers().iter() {
-                    headers.push((
-                        key.as_str().into(),
-                        String::from_utf8(val.as_bytes().to_vec())?,
-                    ));
+                    let key_str: String = key.as_str().into();
+                    let val_str = String::from_utf8(val.as_bytes().to_vec())?;
+                    if key_str.eq_ignore_ascii_case("content-encoding") {
+                        content_encoding = Some(val_str.to_lowercase());
+                    }
+                    headers.push((key_str, val_str));
                 }
+                let bytes = res.bytes().await?;
+                let body = if let Some(enc) = content_encoding {
+                    match enc.as_str() {
+                        "gzip" => {
+                            use flate2::read::GzDecoder;
+                            use std::io::Read;
+                            let mut d = GzDecoder::new(&bytes[..]);
+                            let mut decompressed = Vec::new();
+                            d.read_to_end(&mut decompressed)?;
+                            decompressed
+                        },
+                        "deflate" => {
+                            use flate2::read::DeflateDecoder;
+                            use std::io::Read;
+                            let mut d = DeflateDecoder::new(&bytes[..]);
+                            let mut decompressed = Vec::new();
+                            d.read_to_end(&mut decompressed)?;
+                            decompressed
+                        },
+                        "br" => {
+                            use brotli::Decompressor;
+                            use std::io::Read;
+                            let mut d = Decompressor::new(&bytes[..], 4096);
+                            let mut decompressed = Vec::new();
+                            d.read_to_end(&mut decompressed)?;
+                            decompressed
+                        },
+                        "identity" => bytes.to_vec(),
+                        _ => bytes.to_vec(),
+                    }
+                } else {
+                    bytes.to_vec()
+                };
                 return Ok(FetchResponse {
                     status: status.as_u16(),
                     status_text: status.canonical_reason().unwrap_or_default().to_string(),
                     headers,
                     url,
-                    body: Some(res.bytes().await?.to_vec()),
+                    body: Some(body),
                 });
             }
             Err(err) => return Err(Error::Network(err)),

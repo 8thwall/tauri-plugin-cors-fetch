@@ -33,9 +33,14 @@ http = "1"
 reqwest = { version = "0.12", default-features = false }
 once_cell = "1"
 tokio = { version = "1", features = ["macros"] }
+flate2 = "1.1.2"
+brotli = "8.0.2"
 
 [build-dependencies]
 tauri-plugin = { version = "2", features = ["build"] }
+
+[dev-dependencies]
+httpmock = "0.6"
 
 [features]
 default = [
