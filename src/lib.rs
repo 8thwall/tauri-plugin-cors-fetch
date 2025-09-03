@@ -15,6 +15,8 @@ use tauri::{
 pub use error::{Error, Result};
 mod commands;
 mod error;
+#[cfg(test)]
+mod command_test;
 
 pub fn init<R: Runtime>() -> TauriPlugin<R> {
     Builder::<R>::new("cors-fetch")
